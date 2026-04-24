@@ -1,41 +1,24 @@
-from langchain.agents import create_agent
-import urllib.error
-import urllib.request
+# Demonstrates SummarizationMiddleware: automatically summarizes older messages once a
+# configured threshold is reached, keeping recent ones intact and preserving AI/Tool message pairs.
+
+# --- Imports ---
+
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
 from langchain.tools import tool
-from langgraph.checkpoint.memory import InMemorySaver
-import os
-from deepagents import create_deep_agent
+from langchain_community.retrievers import WikipediaRetriever
 from langchain_community.utilities import OpenWeatherMapAPIWrapper
+from langgraph.checkpoint.memory import InMemorySaver
+from deepagents import create_deep_agent
+from langchain.agents.middleware import SummarizationMiddleware
 from rich.console import Console
 from rich.markdown import Markdown
-from langchain.agents.middleware import SummarizationMiddleware
 
-from langchain_community.retrievers import WikipediaRetriever
-
-retriever = WikipediaRetriever(
-    wiki_client="",
-    top_k_results=1,
-    doc_content_chars_max=10000
-)
-
-
-@tool
-def fetch_wiki_data(query: str) -> str:
-    """Fetch content of Wikipedia page from top hit of a query"""
-    res = retriever.invoke(query)
-    if res:
-        return res[0].page_content
-    return "No data found"
-
-console = Console()
+# --- Setup ---
 
 load_dotenv()
 
-checkpointer = InMemorySaver()
-
-weather = OpenWeatherMapAPIWrapper()
+console = Console()
 
 SYSTEM_PROMPT = "Print the answer using markdown, colors and emoji."
 
@@ -46,31 +29,54 @@ model = init_chat_model(
     max_tokens=1000,
 )
 
+checkpointer = InMemorySaver()
 
+# --- Tools ---
+
+weather = OpenWeatherMapAPIWrapper()
+
+retriever = WikipediaRetriever(
+    wiki_client="",
+    top_k_results=1,
+    doc_content_chars_max=10000,
+)
+
+@tool
+def fetch_wiki_data(query: str) -> str:
+    """Fetch content of Wikipedia page from top hit of a query."""
+    res = retriever.invoke(query)
+    if res:
+        return res[0].page_content
+    return "No data found"
+
+# --- Agent ---
+
+# Custom prompt used by SummarizationMiddleware when compressing old messages
 summary_prompt = """
-Summarize the main thrust of this conversation. What have the humand and assistant discussed so far? Focus on key facts and requests.
+Summarize the main thrust of this conversation. What have the human and assistant discussed so far? Focus on key facts and requests.
 <messages>
 Messages to summarize:
 {messages}
 </messages>
 """
 
-
 deep_agent = create_deep_agent(
     model=model,
-    tools = [weather.run, fetch_wiki_data],
+    tools=[weather.run, fetch_wiki_data],
     system_prompt=SYSTEM_PROMPT,
     checkpointer=checkpointer,
     middleware=[
         SummarizationMiddleware(
-            model="azure_openai:gpt-4o-mini",
+            model=model,
             summary_prompt=summary_prompt,
-            trigger = ("fraction", 0.7),
-            keep = ("fraction", 0.3),
-            trim_tokens_to_summarize = None,
+            trigger=("messages", 3),   # low threshold, suitable for testing
+            keep=("messages", 1),      # retain only the latest message after summarization
+            trim_tokens_to_summarize=None,
         ),
     ],
 )
+
+# --- Main loop ---
 
 console.print("[bold cyan]Assistant ready. Type [bold]exit[/bold] to quit.[/bold cyan]\n")
 
@@ -82,6 +88,7 @@ while True:
         break
 
     if not user_input or user_input.lower() in ("exit", "quit", "bye"):
+        console.print("\n[bold red]Exiting...[/bold red]")
         break
 
     result = deep_agent.invoke(
