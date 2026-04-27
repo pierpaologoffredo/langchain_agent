@@ -1,58 +1,27 @@
-# Demonstrates SummarizationMiddleware: automatically summarizes older messages once a
-# configured threshold is reached, keeping recent ones intact and preserving AI/Tool message pairs.
+"""Demo: SummarizationMiddleware.
 
-# --- Imports ---
+Automatically compresses older messages once the conversation exceeds a
+configured threshold, keeping recent ones intact and preserving AI/Tool
+message pairs so the agent never loses the most recent context.
 
-from dotenv import load_dotenv
-from langchain.chat_models import init_chat_model
-from langchain.tools import tool
-from langchain_community.retrievers import WikipediaRetriever
-from langchain_community.utilities import OpenWeatherMapAPIWrapper
-from langgraph.checkpoint.memory import InMemorySaver
+Run directly to start the agent with summarization enabled.
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from deepagents import create_deep_agent
-from langchain.agents.middleware import SummarizationMiddleware
-from rich.console import Console
 from rich.markdown import Markdown
 
-# --- Setup ---
+from config import checkpointer, console, model, SYSTEM_PROMPT
+from tools import fetch_wiki_data, get_weather
+from middleware import SummarizationMiddleware
 
-load_dotenv()
-
-console = Console()
-
-SYSTEM_PROMPT = "Print the answer using markdown, colors and emoji."
-
-model = init_chat_model(
-    "azure_openai:gpt-4o-mini",
-    temperature=0.5,
-    timeout=300,
-    max_tokens=1000,
-)
-
-checkpointer = InMemorySaver()
-
-# --- Tools ---
-
-weather = OpenWeatherMapAPIWrapper()
-
-retriever = WikipediaRetriever(
-    wiki_client="",
-    top_k_results=1,
-    doc_content_chars_max=10000,
-)
-
-@tool
-def fetch_wiki_data(query: str) -> str:
-    """Fetch content of Wikipedia page from top hit of a query."""
-    res = retriever.invoke(query)
-    if res:
-        return res[0].page_content
-    return "No data found"
-
-# --- Agent ---
-
-# Custom prompt used by SummarizationMiddleware when compressing old messages
-summary_prompt = """
+# Prompt sent to the summarization model when compressing old messages.
+# The {messages} placeholder is filled in by the middleware.
+SUMMARY_PROMPT = """
 Summarize the main thrust of this conversation. What have the human and assistant discussed so far? Focus on key facts and requests.
 <messages>
 Messages to summarize:
@@ -62,21 +31,19 @@ Messages to summarize:
 
 deep_agent = create_deep_agent(
     model=model,
-    tools=[weather.run, fetch_wiki_data],
+    tools=[get_weather, fetch_wiki_data],
     system_prompt=SYSTEM_PROMPT,
     checkpointer=checkpointer,
     middleware=[
         SummarizationMiddleware(
             model=model,
-            summary_prompt=summary_prompt,
-            trigger=("messages", 3),   # low threshold, suitable for testing
+            summary_prompt=SUMMARY_PROMPT,
+            trigger=("messages", 3),   # low threshold — convenient for manual testing
             keep=("messages", 1),      # retain only the latest message after summarization
             trim_tokens_to_summarize=None,
         ),
     ],
 )
-
-# --- Main loop ---
 
 console.print("[bold cyan]Assistant ready. Type [bold]exit[/bold] to quit.[/bold cyan]\n")
 

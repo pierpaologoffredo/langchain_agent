@@ -1,16 +1,27 @@
 # LangChain Agent — Middleware Showcase
 
-This project demonstrates the middleware capabilities of the [`deepagents`](https://pypi.org/project/deepagents/) library, built on top of LangChain and LangGraph. Each script is a self-contained example of a different middleware, showing how to extend and control agent behaviour without modifying core agent logic.
+A modular LangChain/LangGraph agent that demonstrates the middleware capabilities of the [`deepagents`](https://pypi.org/project/deepagents/) library. Tools, middleware, and configuration live in separate modules so each component can be reused or swapped without touching the rest of the codebase.
 
-## Middleware examples
+## Project structure
 
-| Script | Middleware | What it shows |
-|---|---|---|
-| `main.py` | `SummarizationMiddleware` | Entry-point agent with weather tool and automatic conversation summarization |
-| `middleware/summarization.py` | `SummarizationMiddleware` | Summarizes old messages past a threshold, keeping recent context intact |
-| `middleware/humanintheloop.py` | `HumanInTheLoopMiddleware` | Pauses before write operations and asks the user to approve, edit, or reject each action |
-| `middleware/calllimit.py` | `ModelCallLimitMiddleware` | Caps the number of model calls per run and raises an error when the limit is exceeded |
-| `middleware/todolist.py` | `TodoListMiddleware` | Lets the agent plan and track a structured to-do list across multi-step tasks |
+```
+langchain_agent/
+├── main.py                    # Entry point — CLI loop with the full safety stack
+├── config.py                  # Shared config: model, console, checkpointer, system prompt
+├── tools/
+│   ├── __init__.py            # Exports ALL_TOOLS and individual tools
+│   ├── weather.py             # get_weather — current conditions via OpenWeatherMap
+│   ├── wikipedia.py           # fetch_wiki_data — top Wikipedia result for a query
+│   └── notes.py               # save_research_note — persists a finding to test.txt
+└── middleware/
+    ├── __init__.py            # Re-exports all middleware from one location
+    ├── guardrails.py          # Custom: InputGuardrailMiddleware + OutputSafetyMiddleware
+    ├── pii.py                 # Demo: PII filtering + guardrails stack
+    ├── summarization.py       # Demo: automatic conversation summarization
+    ├── calllimit.py           # Demo: model call cap per run
+    ├── humanintheloop.py      # Demo: human approval before write operations
+    └── todolist.py            # Demo: structured to-do list planning
+```
 
 ## Setup
 
@@ -31,23 +42,46 @@ LANGSMITH_API_KEY=...
 LANGSMITH_TRACING=true
 ```
 
-## Running an example
+## Running the agent
 
 ```bash
-# Main agent (SummarizationMiddleware)
+# Main agent — full PII + guardrails safety stack
 python main.py
 
-# Any middleware example
-python middleware/humanintheloop.py
+# Individual middleware demos
+python middleware/pii.py
 python middleware/summarization.py
 python middleware/calllimit.py
+python middleware/humanintheloop.py
 python middleware/todolist.py
 ```
 
-All scripts expose the same interactive CLI. Type `exit` or `quit` to stop.
+All scripts expose the same interactive CLI. Type `exit`, `quit`, or `bye` to stop.
 
-## Tools available across examples
+## Middleware overview
 
-- **Weather** — current conditions via OpenWeatherMap (`OPENWEATHERMAP_API_KEY` required)
-- **Wikipedia** — fetches the top result for a query (no API key needed)
-- **Research notes** — saves a note to `test.txt` (used to demonstrate write-tool approval in HITL)
+| Script | Middleware | What it shows |
+|---|---|---|
+| `main.py` / `middleware/pii.py` | `PIIMiddleware` + `InputGuardrailMiddleware` + `OutputSafetyMiddleware` | Full safety stack: PII redaction/masking/blocking, keyword filter, LLM-based output check |
+| `middleware/summarization.py` | `SummarizationMiddleware` | Compresses old messages past a threshold, keeping recent context intact |
+| `middleware/humanintheloop.py` | `HumanInTheLoopMiddleware` | Pauses before write operations and asks the user to approve, edit, or reject each action |
+| `middleware/calllimit.py` | `ModelCallLimitMiddleware` | Caps the number of LLM calls per run and raises when the limit is exceeded |
+| `middleware/todolist.py` | `TodoListMiddleware` | Lets the agent plan and track a structured to-do list across multi-step tasks |
+
+## Custom middleware
+
+Two custom guardrail classes are defined in `middleware/guardrails.py` and available via `from middleware import ...`:
+
+- **`InputGuardrailMiddleware`** — deterministic filter that runs before the model. Rejects messages containing banned keywords or exceeding a character limit.
+- **`OutputSafetyMiddleware`** — LLM-based judge that runs after the model. Classifies the response as `SAFE` or `UNSAFE` and replaces unsafe replies with a generic refusal.
+
+## Adding a new tool
+
+1. Create `tools/<name>.py` and define a `@tool`-decorated function with a docstring.
+2. Import it in `tools/__init__.py` and add it to `ALL_TOOLS`.
+
+## Adding a new middleware
+
+1. If writing a custom class, add it to `middleware/guardrails.py` (or a new file).
+2. Import and re-export it from `middleware/__init__.py`.
+3. Add it to the `middleware=[...]` list in `main.py` or the relevant demo script.

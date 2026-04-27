@@ -1,73 +1,46 @@
-from langchain.agents import create_agent
-import urllib.error
-import urllib.request
-from dotenv import load_dotenv
-from langchain.chat_models import init_chat_model
-from langchain.tools import tool
-from langgraph.checkpoint.memory import InMemorySaver
-import os
-from deepagents import create_deep_agent
-from langchain_community.utilities import OpenWeatherMapAPIWrapper
-from rich.console import Console
-from rich.markdown import Markdown
-from langchain.agents.middleware import SummarizationMiddleware
+"""Entry point for the langchain agent CLI.
 
-from langchain_community.retrievers import WikipediaRetriever
+Builds a DeepAgent with the full safety stack (PII filtering, output safety
+check, and input guardrails) and starts an interactive CLI loop.
 
-retriever = WikipediaRetriever(
-    wiki_client="",
-    top_k_results=1,
-    doc_content_chars_max=10000
-)
-
-
-@tool
-def fetch_wiki_data(query: str) -> str:
-    """Fetch content of Wikipedia page from top hit of a query"""
-    res = retriever.invoke(query)
-    if res:
-        return res[0].page_content
-    return "No data found"
-
-console = Console()
-
-load_dotenv()
-
-checkpointer = InMemorySaver()
-
-weather = OpenWeatherMapAPIWrapper()
-
-SYSTEM_PROMPT = "Print the answer using markdown, colors and emoji."
-
-model = init_chat_model(
-    "azure_openai:gpt-4o-mini",
-    temperature=0.5,
-    timeout=300,
-    max_tokens=1000,
-)
-
-
-summary_prompt = """
-Summarize the main thrust of this conversation. What have the humand and assistant discussed so far? Focus on key facts and requests.
-<messages>
-Messages to summarize:
-{messages}
-</messages>
+Type 'exit', 'quit', or 'bye' — or press Ctrl+C — to stop the agent.
 """
 
+from deepagents import create_deep_agent
+from rich.markdown import Markdown
+
+from config import checkpointer, console, model, SYSTEM_PROMPT
+from tools import ALL_TOOLS
+from middleware import (
+    InputGuardrailMiddleware,
+    OutputSafetyMiddleware,
+    PIIMiddleware,
+)
 
 deep_agent = create_deep_agent(
     model=model,
-    tools = [weather.run, fetch_wiki_data],
+    tools=ALL_TOOLS,
     system_prompt=SYSTEM_PROMPT,
     checkpointer=checkpointer,
     middleware=[
-        SummarizationMiddleware(
-            model="azure_openai:gpt-4o-mini",
-            summary_prompt=summary_prompt,
-            trigger = ("fraction", 0.7),
-            keep = ("fraction", 0.3),
-            trim_tokens_to_summarize = None,
+        # Strip email addresses from both user input and model output
+        PIIMiddleware("email", strategy="redact", apply_to_input=True, apply_to_output=True),
+        # Block messages that contain an OpenAI-style API key
+        PIIMiddleware("api_key", detector=r"sk-[a-zA-Z0-9]{32,}", strategy="block", apply_to_input=True),
+        # Mask credit card numbers before they reach the model
+        PIIMiddleware("credit_card", strategy="mask", apply_to_input=True),
+        # Redact URLs from both sides of the conversation
+        PIIMiddleware("url", strategy="redact", apply_to_input=True, apply_to_output=True),
+        # LLM-based safety check on the model's final answer
+        OutputSafetyMiddleware(safety_model_id="azure_openai:gpt-4o-mini", tools=ALL_TOOLS),
+        # Keyword + length filter — runs before the model, short-circuits on violations
+        InputGuardrailMiddleware(
+            banned_keywords=[
+                "hack", "exploit", "jailbreak",
+                "ignore previous", "ignore instructions",
+                "disregard", "bypass",
+            ],
+            max_length=1_000,
         ),
     ],
 )
@@ -82,6 +55,7 @@ while True:
         break
 
     if not user_input or user_input.lower() in ("exit", "quit", "bye"):
+        console.print("\n[bold red]Exiting...[/bold red]")
         break
 
     result = deep_agent.invoke(

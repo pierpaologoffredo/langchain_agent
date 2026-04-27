@@ -1,72 +1,36 @@
-# Demonstrates ModelCallLimitMiddleware: caps the number of model calls per agent run
-# and raises an error when the limit is exceeded, preventing runaway execution.
+"""Demo: ModelCallLimitMiddleware.
 
-# --- Imports ---
+Caps the number of LLM calls per agent run and raises when the limit is
+exceeded, preventing runaway or looping execution.
 
-from dotenv import load_dotenv
+The agent is configured with run_limit=2, so the third model call triggers
+an exception.  exit_behavior="error" makes the limit immediately visible
+during testing.
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from langchain.agents import create_agent
-from langchain.agents.middleware import ModelCallLimitMiddleware
-from langchain.chat_models import init_chat_model
-from langchain.tools import tool
-from langchain_community.retrievers import WikipediaRetriever
-from langchain_community.utilities import OpenWeatherMapAPIWrapper
-from langgraph.checkpoint.memory import InMemorySaver
-from deepagents import create_deep_agent
-from rich.console import Console
 from rich.markdown import Markdown
 
-# --- Setup ---
+from config import checkpointer, console, model
+from tools import ALL_TOOLS
+from middleware import ModelCallLimitMiddleware
 
-load_dotenv()
-
-console = Console()
-
-model = init_chat_model("azure_openai:gpt-4o-mini", temperature=0.5)
-
-checkpointer = InMemorySaver()
-
-# --- Tools ---
-
-weather = OpenWeatherMapAPIWrapper()
-
-retriever = WikipediaRetriever(
-    wiki_client="",
-    top_k_results=1,
-    doc_content_chars_max=10000,
-)
-
-@tool
-def fetch_wiki_data(query: str) -> str:
-    """Fetch content of Wikipedia page from top hit of a query."""
-    res = retriever.invoke(query)
-    if res:
-        return res[0].page_content
-    return "No data found"
-
-@tool
-def save_research_note(note: str, topic: str) -> str:
-    """Save an important research note about a topic to the knowledge base."""
-    with open("test.txt", "w", encoding="utf-8") as txt:
-        txt.write(f"Note saved — Topic: {topic} | Content: {note}")
-    return f"Note saved — Topic: {topic} | Content: {note}"
-
-# --- Agent ---
-
-# run_limit=2 means the agent errors out on the 3rd model call.
-# exit_behavior="error" raises an exception, making the limit immediately visible.
 agent = create_agent(
     model=model,
-    tools=[fetch_wiki_data, save_research_note, weather.run],
+    tools=ALL_TOOLS,
     checkpointer=checkpointer,
     middleware=[
         ModelCallLimitMiddleware(
-            run_limit=2,
+            run_limit=2,           # error on the 3rd model call within a single run
             exit_behavior="error",
         ),
     ],
 )
-
-# --- Main loop ---
 
 console.print("[bold cyan]Assistant ready. Type [bold]exit[/bold] to quit.[/bold cyan]\n")
 
@@ -82,7 +46,7 @@ while True:
         break
 
     try:
-        # version="v2" is required to receive interrupt events
+        # version="v2" is required to receive interrupt/error events
         result = agent.invoke(
             {"messages": [{"role": "user", "content": user_input}]},
             config={"configurable": {"thread_id": "main_thread"}},
@@ -95,5 +59,6 @@ while True:
         console.print("\n[bold green]Agent:[/bold green]")
         console.print(Markdown(content))
         console.print()
+
     except Exception as e:
         console.print(f"[bold red]Call limit reached: {e}[/bold red]")
