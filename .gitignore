@@ -1,3 +1,13 @@
 .env
 *.bat
 cert.py
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+.venv/
+
+# Local agent database
+agent_db/

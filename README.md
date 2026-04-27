@@ -7,12 +7,15 @@ A modular LangChain/LangGraph agent that demonstrates the middleware capabilitie
 ```
 langchain_agent/
 ├── main.py                    # Entry point — CLI loop with the full safety stack
-├── config.py                  # Shared config: model, console, checkpointer, system prompt
+├── config.py                  # Shared config: model, console, DB paths, system prompt
 ├── tools/
 │   ├── __init__.py            # Exports ALL_TOOLS and individual tools
 │   ├── weather.py             # get_weather — current conditions via OpenWeatherMap
 │   ├── wikipedia.py           # fetch_wiki_data — top Wikipedia result for a query
 │   └── notes.py               # save_research_note — persists a finding to test.txt
+├── store/
+│   ├── __init__.py            # Exports SQLiteStore
+│   └── sqlite.py              # SQLiteStore — BaseStore backed by a local SQLite file
 └── middleware/
     ├── __init__.py            # Re-exports all middleware from one location
     ├── guardrails.py          # Custom: InputGuardrailMiddleware + OutputSafetyMiddleware
@@ -75,13 +78,10 @@ Two custom guardrail classes are defined in `middleware/guardrails.py` and avail
 - **`InputGuardrailMiddleware`** — deterministic filter that runs before the model. Rejects messages containing banned keywords or exceeding a character limit.
 - **`OutputSafetyMiddleware`** — LLM-based judge that runs after the model. Classifies the response as `SAFE` or `UNSAFE` and replaces unsafe replies with a generic refusal.
 
-## Adding a new tool
+## Extending the project
 
-1. Create `tools/<name>.py` and define a `@tool`-decorated function with a docstring.
-2. Import it in `tools/__init__.py` and add it to `ALL_TOOLS`.
+**New tool** — create `tools/<name>.py` with a `@tool`-decorated function, then import it in `tools/__init__.py` and add it to `ALL_TOOLS`.
 
-## Adding a new middleware
+**New middleware** — add a custom class to `middleware/guardrails.py` (or a new file), re-export it from `middleware/__init__.py`, and include it in the `middleware=[...]` list in `main.py` or the relevant demo.
 
-1. If writing a custom class, add it to `middleware/guardrails.py` (or a new file).
-2. Import and re-export it from `middleware/__init__.py`.
-3. Add it to the `middleware=[...]` list in `main.py` or the relevant demo script.
+**New store backend** — add a new file under `store/` that subclasses `BaseStore`, export it from `store/__init__.py`, and pass it as `store=` to `create_deep_agent`.  The DB paths live in `config.py` (`DB_DIR`, `CHECKPOINT_DB`, `MEMORY_DB`).
