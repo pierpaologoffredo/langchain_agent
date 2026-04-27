@@ -716,6 +716,7 @@ dependencies = [
     { name = "langchain-community" },
     { name = "langchain-openai" },
     { name = "pyowm" },
+    { name = "requests" },
     { name = "rich" },
     { name = "wikipedia" },
 ]
@@ -728,6 +729,7 @@ requires-dist = [
     { name = "langchain-community", specifier = ">=0.4.1" },
     { name = "langchain-openai", specifier = ">=1.2.0" },
     { name = "pyowm", specifier = ">=3.5.0" },
+    { name = "requests", specifier = ">=2.33.1" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "wikipedia", specifier = ">=1.4.0" },
 ]
