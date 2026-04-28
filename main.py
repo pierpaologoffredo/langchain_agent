@@ -10,11 +10,11 @@ import os
 
 import openai
 from deepagents import create_deep_agent
+from langchain_core.messages import AIMessageChunk
 from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
 from langgraph.checkpoint.sqlite import SqliteSaver
-from rich.markdown import Markdown
 
-from config import CHECKPOINT_DB, DB_DIR, MEMORY_DB, console, model, SYSTEM_PROMPT
+from config import CHECKPOINT_DB, DB_DIR, MEMORY_DB, model, SYSTEM_PROMPT
 from store import SQLiteStore
 from tools import ALL_TOOLS
 from middleware import (
@@ -70,36 +70,33 @@ with SqliteSaver.from_conn_string(CHECKPOINT_DB) as checkpointer:
         ],
     )
 
-    console.print("[bold cyan]Assistant ready. Type [bold]exit[/bold] to quit.[/bold cyan]\n")
+    print("Assistant ready. Type 'exit' to quit.\n")
 
     while True:
         try:
             user_input = input("You: ").strip()
         except (EOFError, KeyboardInterrupt):
-            console.print("\n[bold red]Exiting...[/bold red]")
+            print("\nExiting...")
             break
 
         if not user_input or user_input.lower() in ("exit", "quit", "bye"):
-            console.print("\n[bold red]Exiting...[/bold red]")
+            print("\nExiting...")
             break
 
+        print("\nAgent: ", end="", flush=True)
         try:
-            result = deep_agent.invoke(
+            for chunk, _ in deep_agent.stream(
                 {"messages": [{"role": "user", "content": user_input}]},
                 config={"configurable": {"thread_id": "main_thread"}},
-            )
+                stream_mode="messages",
+            ):
+                if isinstance(chunk, AIMessageChunk) and isinstance(chunk.content, str) and chunk.content:
+                    print(chunk.content, end="", flush=True)
         except openai.BadRequestError as e:
             if e.code == "content_filter":
-                console.print("\n[bold yellow]Agent:[/bold yellow] Your message was flagged by the content filter. Please rephrase and try again.\n")
+                print("Your message was flagged by the content filter. Please rephrase and try again.")
             else:
-                console.print(f"\n[bold red]Request error:[/bold red] {e}\n")
-            continue
+                print(f"Request error: {e}")
         except openai.RateLimitError:
-            console.print("\n[bold yellow]Agent:[/bold yellow] The API rate limit was hit. Please wait a moment and try again.\n")
-            continue
-
-        last_msg = result["messages"][-1]
-        content = last_msg.content if isinstance(last_msg.content, str) else last_msg.content[0].get("text", "")
-        console.print("\n[bold green]Agent:[/bold green]")
-        console.print(Markdown(content))
-        console.print()
+            print("The API rate limit was hit. Please wait a moment and try again.")
+        print("\n")

@@ -10,11 +10,6 @@ from langchain.agents.middleware import AgentMiddleware, AgentState, hook_config
 from langchain.chat_models import init_chat_model
 from langchain.messages import AIMessage
 from langgraph.runtime import Runtime
-from rich.console import Console
-
-_console = Console()
-
-
 class InputGuardrailMiddleware(AgentMiddleware):
     """Deterministic input guardrail: blocks banned keywords and oversized messages.
 
@@ -131,8 +126,10 @@ Reply ONLY with 'SAFE' or 'UNSAFE: <brief reason>'.
 Response to evaluate:
 {last.content}"""
 
-        judgment = self.safety_model.invoke([{"role": "user", "content": safety_prompt}])
-        _console.print(f"[dim yellow]Safety judgment: {judgment.content}[/dim yellow]")
+        judgment = self.safety_model.invoke(
+            [{"role": "user", "content": safety_prompt}],
+            config={"callbacks": []},
+        )
 
         if judgment.content.startswith("UNSAFE"):
             reason = judgment.content.replace("UNSAFE: ", "")

@@ -9,7 +9,6 @@ import os
 
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
-from rich.console import Console
 
 load_dotenv()
 
@@ -18,11 +17,7 @@ DB_DIR = "agent_db"
 CHECKPOINT_DB = os.path.join(DB_DIR, "checkpoints.db")
 MEMORY_DB = os.path.join(DB_DIR, "memories.db")
 
-console = Console()
-
 SYSTEM_PROMPT = """You are a research assistant with persistent memory.
-
-Use markdown, colors and emoji in all responses.
 
 Memory guidelines:
 - When the user shares preferences or important facts about themselves,
