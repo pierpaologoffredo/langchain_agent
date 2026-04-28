@@ -11,3 +11,6 @@ __pycache__/
 
 # Local agent database
 agent_db/
+
+# Test files
+test.txt

@@ -8,6 +8,7 @@ Type 'exit', 'quit', or 'bye' — or press Ctrl+C — to stop the agent.
 
 import os
 
+import openai
 from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -82,10 +83,20 @@ with SqliteSaver.from_conn_string(CHECKPOINT_DB) as checkpointer:
             console.print("\n[bold red]Exiting...[/bold red]")
             break
 
-        result = deep_agent.invoke(
-            {"messages": [{"role": "user", "content": user_input}]},
-            config={"configurable": {"thread_id": "main_thread"}},
-        )
+        try:
+            result = deep_agent.invoke(
+                {"messages": [{"role": "user", "content": user_input}]},
+                config={"configurable": {"thread_id": "main_thread"}},
+            )
+        except openai.BadRequestError as e:
+            if e.code == "content_filter":
+                console.print("\n[bold yellow]Agent:[/bold yellow] Your message was flagged by the content filter. Please rephrase and try again.\n")
+            else:
+                console.print(f"\n[bold red]Request error:[/bold red] {e}\n")
+            continue
+        except openai.RateLimitError:
+            console.print("\n[bold yellow]Agent:[/bold yellow] The API rate limit was hit. Please wait a moment and try again.\n")
+            continue
 
         last_msg = result["messages"][-1]
         content = last_msg.content if isinstance(last_msg.content, str) else last_msg.content[0].get("text", "")
